@@ -9,6 +9,7 @@ import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.text.TextUtils;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.SurfaceView;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -51,6 +52,8 @@ public class VideoChatViewActivity extends AppCompatActivity {
 
     // Customized logger view
     private LoggerRecyclerView mLogView;
+
+    private boolean isLocalShowRemote = false;
 
     /**
      * Event handler registered into RTC engine for RTC callbacks.
@@ -112,6 +115,22 @@ public class VideoChatViewActivity extends AppCompatActivity {
         mRemoteContainer.addView(mRemoteView);
         mRtcEngine.setupRemoteVideo(new VideoCanvas(mRemoteView, VideoCanvas.RENDER_MODE_HIDDEN, uid));
         mRemoteView.setTag(uid);
+
+        mRemoteView.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                isLocalShowRemote = !isLocalShowRemote;
+                mRtcEngine.setupLocalVideo(null);
+                mRtcEngine.setupRemoteVideo(new VideoCanvas(null, 1, (int) (mRemoteView.getTag())));
+                if (isLocalShowRemote) {
+                    mRtcEngine.setupLocalVideo(new VideoCanvas(mRemoteView));
+                    mRtcEngine.setupRemoteVideo(new VideoCanvas(mLocalView, 1, (int) (mRemoteView.getTag())));
+                } else {
+                    mRtcEngine.setupLocalVideo(new VideoCanvas(mLocalView));
+                    mRtcEngine.setupRemoteVideo(new VideoCanvas(mRemoteView, 1, (int) (mRemoteView.getTag())));
+                }
+            }
+        });
     }
 
     private void onRemoteUserLeft() {
@@ -141,6 +160,9 @@ public class VideoChatViewActivity extends AppCompatActivity {
         }
     }
 
+    float firstX, firstY, lastX, lastY, changeX, changeY;
+    int newX, newY;
+
     private void initUI() {
         mLocalContainer = findViewById(R.id.local_video_view_container);
         mRemoteContainer = findViewById(R.id.remote_video_view_container);
@@ -150,6 +172,38 @@ public class VideoChatViewActivity extends AppCompatActivity {
         mSwitchCameraBtn = findViewById(R.id.btn_switch_camera);
 
         mLogView = findViewById(R.id.log_recycler_view);
+
+        mLocalContainer.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        firstX = lastX = event.getRawX();
+                        firstY = lastY = event.getRawY();
+                        break;
+                    case MotionEvent.ACTION_MOVE:
+                        changeX = event.getRawX() - lastX;
+                        changeY = event.getRawY() - lastY;
+                        newX = (int) (mLocalContainer.getX() + changeX);
+                        newY = (int) (mLocalContainer.getY() + changeY);
+                        RelativeLayout.LayoutParams lp = (RelativeLayout.LayoutParams) mLocalContainer.getLayoutParams();
+                        lp.rightMargin -= changeX;
+                        lp.topMargin += changeY;
+                        mLocalContainer.setLayoutParams(lp);
+                        lastX = event.getRawX();
+                        lastY = event.getRawY();
+                        break;
+                    case MotionEvent.ACTION_UP:
+//                    case MotionEvent.ACTION_CANCEL:
+                        if (Math.abs(event.getRawX() - firstX) < 2 && Math.abs(event.getRawY() - firstY) < 2) {
+                            // doOnClick
+                            return false;
+                        }
+                        break;
+                }
+                return true;
+            }
+        });
 
         // Sample logs are optional.
         showSampleLogs();
@@ -252,10 +306,7 @@ public class VideoChatViewActivity extends AppCompatActivity {
         // same channel successfully using the same app id.
         // 2. One token is only valid for the channel name that
         // you use to generate this token.
-        String token = getString(R.string.agora_access_token);
-        if (TextUtils.isEmpty(token) || TextUtils.equals(token, "#YOUR ACCESS TOKEN#")) {
-            token = null; // default, no token
-        }
+        String token = null;
         mRtcEngine.joinChannel(token, "demoChannel1", "Extra Optional Data", 0);
     }
 
