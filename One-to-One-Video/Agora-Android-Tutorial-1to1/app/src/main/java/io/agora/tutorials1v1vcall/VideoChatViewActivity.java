@@ -7,21 +7,23 @@ import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
-import android.text.TextUtils;
+import android.support.v7.widget.CardView;
 import android.util.Log;
 import android.view.MotionEvent;
-import android.view.SurfaceView;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.RelativeLayout;
 import android.widget.Toast;
 
-import io.agora.uikit.logger.LoggerRecyclerView;
+import io.agora.rtc.Constants;
 import io.agora.rtc.IRtcEngineEventHandler;
 import io.agora.rtc.RtcEngine;
-import io.agora.rtc.video.VideoCanvas;
+import io.agora.rtc.mediaio.AgoraTextureCamera;
+import io.agora.rtc.mediaio.AgoraTextureView;
+import io.agora.rtc.mediaio.MediaIO;
 import io.agora.rtc.video.VideoEncoderConfiguration;
+import io.agora.uikit.logger.LoggerRecyclerView;
 
 public class VideoChatViewActivity extends AppCompatActivity {
     private static final String TAG = VideoChatViewActivity.class.getSimpleName();
@@ -41,10 +43,11 @@ public class VideoChatViewActivity extends AppCompatActivity {
     private boolean mCallEnd;
     private boolean mMuted;
 
-    private FrameLayout mLocalContainer;
-    private RelativeLayout mRemoteContainer;
-    private SurfaceView mLocalView;
-    private SurfaceView mRemoteView;
+    private CardView mLocalContainer;
+    private CardView mRemoteContainer;
+    private FrameLayout mAllVideoContainer;
+    private AgoraTextureView mLocalView;
+    private AgoraTextureView mRemoteView;
 
     private ImageView mCallBtn;
     private ImageView mMuteBtn;
@@ -94,53 +97,43 @@ public class VideoChatViewActivity extends AppCompatActivity {
         }
     };
 
-    private void setupRemoteVideo(int uid) {
-        // Only one remote video view is available for this
-        // tutorial. Here we check if there exists a surface
-        // view tagged as this uid.
-        int count = mRemoteContainer.getChildCount();
-        View view = null;
-        for (int i = 0; i < count; i++) {
-            View v = mRemoteContainer.getChildAt(i);
-            if (v.getTag() instanceof Integer && ((int) v.getTag()) == uid) {
-                view = v;
-            }
-        }
-
-        if (view != null) {
-            return;
-        }
-
-        mRemoteView = RtcEngine.CreateRendererView(getBaseContext());
-        mRemoteContainer.addView(mRemoteView);
-        mRtcEngine.setupRemoteVideo(new VideoCanvas(mRemoteView, VideoCanvas.RENDER_MODE_HIDDEN, uid));
-        mRemoteView.setTag(uid);
-
-        mRemoteView.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                isLocalShowRemote = !isLocalShowRemote;
-                mRtcEngine.setupLocalVideo(null);
-                mRtcEngine.setupRemoteVideo(new VideoCanvas(null, 1, (int) (mRemoteView.getTag())));
-                if (isLocalShowRemote) {
-                    mRtcEngine.setupLocalVideo(new VideoCanvas(mRemoteView));
-                    mRtcEngine.setupRemoteVideo(new VideoCanvas(mLocalView, 1, (int) (mRemoteView.getTag())));
-                } else {
-                    mRtcEngine.setupLocalVideo(new VideoCanvas(mLocalView));
-                    mRtcEngine.setupRemoteVideo(new VideoCanvas(mRemoteView, 1, (int) (mRemoteView.getTag())));
-                }
-            }
-        });
+    private void setupLocalVideo() {
+        AgoraTextureCamera source = new AgoraTextureCamera(this, 1280, 720);
+        AgoraTextureView render = new AgoraTextureView(this);
+        render.init(source.getEglContext());
+        render.setBufferType(MediaIO.BufferType.TEXTURE);
+        render.setPixelFormat(MediaIO.PixelFormat.TEXTURE_OES);
+        mRtcEngine.setVideoSource(source);
+        mRtcEngine.setLocalVideoRenderer(render);
+        mLocalContainer.removeAllViews();
+        mLocalContainer.addView(render, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
     }
+
+    private void setupRemoteVideo(int uid) {
+
+        if (mRemoteView == null
+                || mRemoteView.getTag() == null
+                || !(mRemoteView.getTag() instanceof Integer)
+                || (int)(mRemoteView.getTag()) != uid) {
+            mRemoteView = new AgoraTextureView(this);
+        }
+        mRemoteView.init(null);
+        mRemoteView.setBufferType(MediaIO.BufferType.BYTE_ARRAY);
+        mRemoteView.setPixelFormat(MediaIO.PixelFormat.I420);
+        mRemoteContainer.addView(mRemoteView, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+        mRtcEngine.setRemoteVideoRenderer(uid, mRemoteView);
+    }
+
 
     private void onRemoteUserLeft() {
         removeRemoteVideo();
     }
 
     private void removeRemoteVideo() {
-        if (mRemoteView != null) {
-            mRemoteContainer.removeView(mRemoteView);
-        }
+//        if (mRemoteView != null) {
+//            mRemoteContainer.removeView(mRemoteView);
+//        }
+        mRemoteContainer.removeAllViews();
         mRemoteView = null;
     }
 
@@ -166,6 +159,7 @@ public class VideoChatViewActivity extends AppCompatActivity {
     private void initUI() {
         mLocalContainer = findViewById(R.id.local_video_view_container);
         mRemoteContainer = findViewById(R.id.remote_video_view_container);
+        mAllVideoContainer = findViewById(R.id.container_all_video_view);
 
         mCallBtn = findViewById(R.id.btn_call);
         mMuteBtn = findViewById(R.id.btn_mute);
@@ -173,7 +167,7 @@ public class VideoChatViewActivity extends AppCompatActivity {
 
         mLogView = findViewById(R.id.log_recycler_view);
 
-        mLocalContainer.setOnTouchListener(new View.OnTouchListener() {
+        /*mLocalContainer.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
                 switch (event.getAction()) {
@@ -186,7 +180,7 @@ public class VideoChatViewActivity extends AppCompatActivity {
                         changeY = event.getRawY() - lastY;
                         newX = (int) (mLocalContainer.getX() + changeX);
                         newY = (int) (mLocalContainer.getY() + changeY);
-                        RelativeLayout.LayoutParams lp = (RelativeLayout.LayoutParams) mLocalContainer.getLayoutParams();
+                        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) mLocalContainer.getLayoutParams();
                         lp.rightMargin -= changeX;
                         lp.topMargin += changeY;
                         mLocalContainer.setLayoutParams(lp);
@@ -203,7 +197,7 @@ public class VideoChatViewActivity extends AppCompatActivity {
                 }
                 return true;
             }
-        });
+        });*/
 
         // Sample logs are optional.
         showSampleLogs();
@@ -270,6 +264,8 @@ public class VideoChatViewActivity extends AppCompatActivity {
             Log.e(TAG, Log.getStackTraceString(e));
             throw new RuntimeException("NEED TO check rtc sdk init fatal error\n" + Log.getStackTraceString(e));
         }
+        mRtcEngine.setChannelProfile(Constants.CHANNEL_PROFILE_LIVE_BROADCASTING);
+        mRtcEngine.setClientRole(Constants.CLIENT_ROLE_BROADCASTER);
     }
 
     private void setupVideoConfig() {
@@ -285,20 +281,6 @@ public class VideoChatViewActivity extends AppCompatActivity {
                 VideoEncoderConfiguration.FRAME_RATE.FRAME_RATE_FPS_15,
                 VideoEncoderConfiguration.STANDARD_BITRATE,
                 VideoEncoderConfiguration.ORIENTATION_MODE.ORIENTATION_MODE_FIXED_PORTRAIT));
-    }
-
-    private void setupLocalVideo() {
-        // This is used to set a local preview.
-        // The steps setting local and remote view are very similar.
-        // But note that if the local user do not have a uid or do
-        // not care what the uid is, he can set his uid as ZERO.
-        // Our server will assign one and return the uid via the event
-        // handler callback function (onJoinChannelSuccess) after
-        // joining the channel successfully.
-        mLocalView = RtcEngine.CreateRendererView(getBaseContext());
-        mLocalView.setZOrderMediaOverlay(true);
-        mLocalContainer.addView(mLocalView);
-        mRtcEngine.setupLocalVideo(new VideoCanvas(mLocalView, VideoCanvas.RENDER_MODE_HIDDEN, 0));
     }
 
     private void joinChannel() {
@@ -360,9 +342,10 @@ public class VideoChatViewActivity extends AppCompatActivity {
     }
 
     private void removeLocalVideo() {
-        if (mLocalView != null) {
-            mLocalContainer.removeView(mLocalView);
-        }
+//        if (mLocalView != null) {
+//            mLocalContainer.removeView(mLocalView);
+//        }
+        mLocalContainer.removeAllViews();
         mLocalView = null;
     }
 
@@ -370,5 +353,15 @@ public class VideoChatViewActivity extends AppCompatActivity {
         int visibility = show ? View.VISIBLE : View.GONE;
         mMuteBtn.setVisibility(visibility);
         mSwitchCameraBtn.setVisibility(visibility);
+    }
+
+    public void onClickSwitchVideo(View view) {
+        FrameLayout.LayoutParams lpLocal = (FrameLayout.LayoutParams) mLocalContainer.getLayoutParams();
+        FrameLayout.LayoutParams lpRemote = (FrameLayout.LayoutParams) mRemoteContainer.getLayoutParams();
+        mLocalContainer.setLayoutParams(lpRemote);
+        mRemoteContainer.setLayoutParams(lpLocal);
+        View v = mAllVideoContainer.getChildAt(0);
+        mAllVideoContainer.removeViewAt(0);
+        mAllVideoContainer.addView(v, 1);
     }
 }
