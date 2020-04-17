@@ -2,18 +2,19 @@ package io.agora.tutorials1v1vcall;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
+import android.graphics.Outline;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.CardView;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
-import android.widget.RelativeLayout;
 import android.widget.Toast;
 
 import io.agora.rtc.Constants;
@@ -43,8 +44,8 @@ public class VideoChatViewActivity extends AppCompatActivity {
     private boolean mCallEnd;
     private boolean mMuted;
 
-    private CardView mLocalContainer;
-    private CardView mRemoteContainer;
+    private FrameLayout mLocalContainer;
+    private FrameLayout mRemoteContainer;
     private FrameLayout mAllVideoContainer;
     private AgoraTextureView mLocalView;
     private AgoraTextureView mRemoteView;
@@ -56,7 +57,7 @@ public class VideoChatViewActivity extends AppCompatActivity {
     // Customized logger view
     private LoggerRecyclerView mLogView;
 
-    private boolean isLocalShowRemote = false;
+    private boolean isLocalFull = false;
 
     /**
      * Event handler registered into RTC engine for RTC callbacks.
@@ -114,7 +115,7 @@ public class VideoChatViewActivity extends AppCompatActivity {
         if (mRemoteView == null
                 || mRemoteView.getTag() == null
                 || !(mRemoteView.getTag() instanceof Integer)
-                || (int)(mRemoteView.getTag()) != uid) {
+                || (int) (mRemoteView.getTag()) != uid) {
             mRemoteView = new AgoraTextureView(this);
         }
         mRemoteView.init(null);
@@ -130,9 +131,9 @@ public class VideoChatViewActivity extends AppCompatActivity {
     }
 
     private void removeRemoteVideo() {
-//        if (mRemoteView != null) {
-//            mRemoteContainer.removeView(mRemoteView);
-//        }
+        if (mRemoteView != null) {
+            mRemoteContainer.removeView(mRemoteView);
+        }
         mRemoteContainer.removeAllViews();
         mRemoteView = null;
     }
@@ -155,11 +156,79 @@ public class VideoChatViewActivity extends AppCompatActivity {
 
     float firstX, firstY, lastX, lastY, changeX, changeY;
     int newX, newY;
+    int floatVideoWidth, floatVideoHeight;
+
+    private class CircleOutlineProvider extends ViewOutlineProvider {
+        @Override
+        public void getOutline(View view, Outline outline) {
+            //view是match_parent的
+            outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), 20);
+        }
+    }
+
+    CircleOutlineProvider circleOutlineProvider = new CircleOutlineProvider();
+
+    View.OnTouchListener floatViewOnTouchListener = new View.OnTouchListener() {
+        @Override
+        public boolean onTouch(View v, MotionEvent event) {
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    firstX = lastX = event.getRawX();
+                    firstY = lastY = event.getRawY();
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    View needMove = isLocalFull ? mRemoteContainer : mLocalContainer;
+                    changeX = event.getRawX() - lastX;
+                    changeY = event.getRawY() - lastY;
+                    newX = (int) (needMove.getX() + changeX);
+                    newY = (int) (needMove.getY() + changeY);
+                    FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) needMove.getLayoutParams();
+                    lp.rightMargin -= changeX;
+                    lp.topMargin += changeY;
+                    needMove.setLayoutParams(lp);
+                    lastX = event.getRawX();
+                    lastY = event.getRawY();
+                    break;
+                case MotionEvent.ACTION_UP:
+                    if (Math.abs(event.getRawX() - firstX) < 2 && Math.abs(event.getRawY() - firstY) < 2) {
+                        onFloatViewClick();
+                        return true;
+                    }
+                    break;
+            }
+            return true;
+        }
+    };
+
+    private void onFloatViewClick() {
+        isLocalFull = !isLocalFull;
+        View fullView = isLocalFull ? mLocalContainer : mRemoteContainer;
+        View floatView = isLocalFull ? mRemoteContainer : mLocalContainer;
+
+        ViewGroup.LayoutParams lpFloat = fullView.getLayoutParams();
+        fullView.setLayoutParams(floatView.getLayoutParams());
+        floatView.setLayoutParams(lpFloat);
+
+        fullView.setClipToOutline(false);
+        fullView.setOnTouchListener(null);
+
+        floatView.setClipToOutline(true);
+        floatView.setOnTouchListener(floatViewOnTouchListener);
+        mAllVideoContainer.bringChildToFront(floatView);
+    }
 
     private void initUI() {
         mLocalContainer = findViewById(R.id.local_video_view_container);
         mRemoteContainer = findViewById(R.id.remote_video_view_container);
         mAllVideoContainer = findViewById(R.id.container_all_video_view);
+
+        floatVideoWidth = getResources().getDimensionPixelSize(R.dimen.float_video_width);
+        floatVideoHeight = getResources().getDimensionPixelSize(R.dimen.float_video_height);
+
+        mLocalContainer.setOutlineProvider(circleOutlineProvider);
+        mLocalContainer.setClipToOutline(true);
+        mRemoteContainer.setOutlineProvider(circleOutlineProvider);
+        mRemoteContainer.setClipToOutline(false);
 
         mCallBtn = findViewById(R.id.btn_call);
         mMuteBtn = findViewById(R.id.btn_mute);
@@ -167,37 +236,7 @@ public class VideoChatViewActivity extends AppCompatActivity {
 
         mLogView = findViewById(R.id.log_recycler_view);
 
-        /*mLocalContainer.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        firstX = lastX = event.getRawX();
-                        firstY = lastY = event.getRawY();
-                        break;
-                    case MotionEvent.ACTION_MOVE:
-                        changeX = event.getRawX() - lastX;
-                        changeY = event.getRawY() - lastY;
-                        newX = (int) (mLocalContainer.getX() + changeX);
-                        newY = (int) (mLocalContainer.getY() + changeY);
-                        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) mLocalContainer.getLayoutParams();
-                        lp.rightMargin -= changeX;
-                        lp.topMargin += changeY;
-                        mLocalContainer.setLayoutParams(lp);
-                        lastX = event.getRawX();
-                        lastY = event.getRawY();
-                        break;
-                    case MotionEvent.ACTION_UP:
-//                    case MotionEvent.ACTION_CANCEL:
-                        if (Math.abs(event.getRawX() - firstX) < 2 && Math.abs(event.getRawY() - firstY) < 2) {
-                            // doOnClick
-                            return false;
-                        }
-                        break;
-                }
-                return true;
-            }
-        });*/
+        mLocalContainer.setOnTouchListener(floatViewOnTouchListener);
 
         // Sample logs are optional.
         showSampleLogs();
@@ -342,9 +381,9 @@ public class VideoChatViewActivity extends AppCompatActivity {
     }
 
     private void removeLocalVideo() {
-//        if (mLocalView != null) {
-//            mLocalContainer.removeView(mLocalView);
-//        }
+        if (mLocalView != null) {
+            mLocalContainer.removeView(mLocalView);
+        }
         mLocalContainer.removeAllViews();
         mLocalView = null;
     }
@@ -355,13 +394,4 @@ public class VideoChatViewActivity extends AppCompatActivity {
         mSwitchCameraBtn.setVisibility(visibility);
     }
 
-    public void onClickSwitchVideo(View view) {
-        FrameLayout.LayoutParams lpLocal = (FrameLayout.LayoutParams) mLocalContainer.getLayoutParams();
-        FrameLayout.LayoutParams lpRemote = (FrameLayout.LayoutParams) mRemoteContainer.getLayoutParams();
-        mLocalContainer.setLayoutParams(lpRemote);
-        mRemoteContainer.setLayoutParams(lpLocal);
-        View v = mAllVideoContainer.getChildAt(0);
-        mAllVideoContainer.removeViewAt(0);
-        mAllVideoContainer.addView(v, 1);
-    }
 }

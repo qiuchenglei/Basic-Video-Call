@@ -12,36 +12,25 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
-        <android.support.v7.widget.CardView
+        <FrameLayout
             android:id="@+id/remote_video_view_container"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            app:cardBackgroundColor="@color/remoteBackground" />
+            android:background="@color/remoteBackground" />
 
-        <android.support.v7.widget.CardView
+        <FrameLayout
             android:id="@+id/local_video_view_container"
-            android:layout_width="@dimen/local_preview_width"
-            android:layout_height="@dimen/local_preview_height"
+            android:layout_width="@dimen/float_video_width"
+            android:layout_height="@dimen/float_video_height"
             android:layout_gravity="end"
             android:layout_marginTop="@dimen/local_preview_margin_top"
             android:layout_marginEnd="@dimen/local_preview_margin_right"
             android:layout_marginRight="@dimen/local_preview_margin_right"
-            app:cardBackgroundColor="@color/localBackground"
-            app:cardCornerRadius="8dp">
+            android:background="@color/localBackground">
 
-        </android.support.v7.widget.CardView>
+        </FrameLayout>
 
     </FrameLayout>
-
-    <View
-        android:layout_width="@dimen/local_preview_width"
-        android:layout_height="@dimen/local_preview_height"
-        android:layout_alignParentEnd="true"
-        android:onClick="onClickSwitchVideo"
-        android:layout_alignParentRight="true"
-        android:layout_marginTop="@dimen/local_preview_margin_top"
-        android:layout_marginEnd="@dimen/local_preview_margin_right"
-        android:layout_marginRight="@dimen/local_preview_margin_right" />
 
     <RelativeLayout
         android:id="@+id/control_panel"
